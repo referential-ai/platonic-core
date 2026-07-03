@@ -28,6 +28,25 @@ Out of scope for core:
 
 Those belong in outer crates or apps.
 
+## Module layout
+
+The core crate is split by harness boundary, not by implementation convenience:
+
+```text
+src/lib.rs       public module surface and re-exports only
+src/error.rs     shared error types
+src/ids.rs       string-backed identifier newtypes
+src/message.rs   model-facing message primitives
+src/context.rs   lane-budgeted context assembly primitives
+src/policy.rs    effect classes and policy decisions
+src/tool.rs      tool-call and tool-result boundary types
+src/event.rs     durable harness event ledger
+```
+
+Keep modules narrow. If a module starts pulling in IO, provider clients, runtime
+executors, platform adapters, or storage dependencies, the feature probably
+belongs in an outer crate.
+
 ## Core concepts
 
 ### Henad
