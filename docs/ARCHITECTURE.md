@@ -72,7 +72,8 @@ src/context.rs   lane-labeled context primitives with budget validation
 src/policy.rs    effect classes and policy decisions
 src/tool.rs      tool-call and tool-result boundary types
 src/event.rs     durable harness event ledger
-src/run.rs       pure run/turn state machine
+src/run.rs        pure run/turn state machine
+src/projection.rs pure readback projection over recorded events
 ```
 
 Keep modules narrow. If a module starts pulling in IO, provider clients, runtime
@@ -88,6 +89,8 @@ A bounded agent unit (`AgentId`): not a personality blob, but an execution ident
 ### Run
 
 A durable execution instance. A run is event-log-first. Transcripts, metrics, replay, and audit views are derived from events. The run loop lives in `run` as a pure state machine; hosts drive it. `RunCommand` (desired effects) is a separate type from `HarnessEvent` (recorded facts); replay applies events only, so it can never re-emit IO.
+
+`RunReadback` lives in `projection` as a small pure view over a recorded ledger. It validates the ledger by replaying each `RecordedEvent` through `RunState`, then projects chronological context fragments, model messages, tool calls, tool results, policy denials, approval denials, and tool failures. It does not store events, render output, execute tools, call providers, or read clocks.
 
 ### ContextPack
 
@@ -177,6 +180,7 @@ The multi-turn proof extends that contract without adding IO or runtime machiner
 - immediate `turn_id` reuse after a concluded turn is rejected;
 - model `step` sequencing continues across turns;
 - replay over a two-turn ledger still emits zero model calls and zero tool executions.
+- readback projection is derived from replay-validated ledgers and rejects invalid event streams instead of producing partial transcripts.
 
 No new crates for this; a fake host in tests is enough.
 
