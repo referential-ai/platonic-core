@@ -1,6 +1,6 @@
-//! Context assembly primitives with lane-level budget accounting.
+//! Context assembly primitives with lane labels and budget validation.
 
-use crate::PlatonicError;
+use crate::Error;
 use serde::{Deserialize, Serialize};
 
 /// Lane accounting for context assembly.
@@ -25,6 +25,7 @@ pub enum ContextLane {
 
 /// One accountable context fragment.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ContextFragment {
     /// Context lane this fragment belongs to.
     pub lane: ContextLane,
@@ -38,6 +39,7 @@ pub struct ContextFragment {
 
 /// A bounded prompt/context bundle.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ContextPack {
     /// Maximum allowed prompt tokens for this pack.
     pub token_budget: u32,
@@ -55,10 +57,10 @@ impl ContextPack {
     }
 
     /// Verifies the context pack fits inside its budget.
-    pub fn validate_budget(&self) -> Result<(), PlatonicError> {
+    pub fn validate_budget(&self) -> Result<(), Error> {
         let used = self.estimated_tokens();
         if used > self.token_budget {
-            return Err(PlatonicError::ContextBudgetExceeded {
+            return Err(Error::ContextBudgetExceeded {
                 used,
                 budget: self.token_budget,
             });
@@ -85,7 +87,7 @@ mod tests {
 
         assert!(matches!(
             pack.validate_budget(),
-            Err(PlatonicError::ContextBudgetExceeded {
+            Err(Error::ContextBudgetExceeded {
                 used: 11,
                 budget: 10
             })

@@ -29,20 +29,22 @@ The crate is intentionally modular inside the kernel:
 ```text
 ids      identifier newtypes
 message  model-facing message primitives
-context  lane-budgeted context packs
+context  lane-labeled context packs with budget validation
 policy   effect classes and policy decisions
 tool     tool-call and tool-result boundaries
 event    durable harness event ledger
+run      pure run state machine
 error    shared error types
 ```
 
 The first contract defines serializable primitives:
 
-- `RunId`, `TurnId`, `HenadId`, `ToolCallId`, `ArtifactId`
+- `RunId`, `TurnId`, `AgentId`, `ToolCallId`, `ArtifactId`
 - `Message`, `ContextPack`, `ContextFragment`, `ContextLane`
 - `EffectClass`, `PolicyDecision`
-- `ToolCall`, `ToolResult`, `ResultVisibility`
-- `HarnessEvent`
+- `ToolProposal`, `ToolCall`, `ToolResult`, `ResultVisibility`
+- `RecordedEvent`, `HarnessEvent`, `ModelUsage`
+- `RunState`, `RunPhase`, `RunCommand`
 
 ## Verify
 
@@ -52,4 +54,4 @@ cargo test
 
 ## Status
 
-Seed repo. Architecture first; implementation should stay narrow until the harness contract is sharp.
+Seed kernel. The first run contract is implemented as a pure state machine; outer apps still own IO, providers, tools, stores, gateways, and schedulers.

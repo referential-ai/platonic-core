@@ -111,7 +111,7 @@ Platonic takeaway: do not sell an operating system. Ship a harness contract.
 1. Kernel owns only run orchestration, context packs, tool-call policy, event logs, and replay hooks.
 2. Gateways, schedulers, platform adapters, memory stores, UI, and model providers are outer crates/apps.
 3. Every side effect emits a structured event.
-4. Context assembly is lane-budgeted before model calls.
+4. Context assembly is lane-labeled and budget-validated before model calls.
 5. Tool schemas are typed and selected, not dumped wholesale.
 6. Tool results are summaries plus structured data plus artifact refs.
 7. Fallbacks require policy and are recorded.
