@@ -34,6 +34,10 @@ pub enum Error {
     #[error("turn mismatch: expected {expected}, actual {actual}")]
     TurnMismatch { expected: String, actual: String },
 
+    /// A new turn reused the previous concluded turn id.
+    #[error("turn id was reused: {turn_id}")]
+    TurnReused { turn_id: String },
+
     /// A tool event did not match the pending tool call.
     #[error("tool call mismatch: expected {expected}, actual {actual}")]
     ToolCallMismatch { expected: String, actual: String },
