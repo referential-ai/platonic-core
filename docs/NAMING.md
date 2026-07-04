@@ -28,4 +28,4 @@ These names are available for architecture docs and module concepts, not public 
 - **Prohodos** — forward execution/procession.
 - **Epistrophe** — replay/return/correction loop.
 
-The public surface should stay common. The deep terms should help the architecture stay memorable and structured.
+Brand lives on packages (`platonic-core`, `plato-agent`); all code stays generic (`AgentId`, not `HenadId`; `Error`, not `PlatonicError`). Deep terms are documentation color only — never type names, fields, or serialized values.

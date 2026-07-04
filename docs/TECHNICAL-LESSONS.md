@@ -90,7 +90,7 @@ What not to copy:
 - Self-improving skills as an unbounded accumulation surface.
 - Silent provider fallback in unattended jobs.
 
-Platonic takeaway: Hermes proves the demand; Platonic should be the smaller harness Hermes needed underneath.
+Platonic takeaway: Hermes proves the demand; Platonic should be the smaller harness Hermes needed underneath. The god-class decomposes onto the kernel: prompt assembly → `context`, provider routing/fallback → `policy` plus host, tool execution → host-fulfilled commands, compression → recorded compaction events, sessions/search/callbacks → event-log projections outside core.
 
 ## IronClaw / OpenFang-style projects
 
