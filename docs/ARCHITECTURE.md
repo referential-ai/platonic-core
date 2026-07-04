@@ -72,7 +72,7 @@ src/context.rs   lane-labeled context primitives with budget validation
 src/policy.rs    effect classes and policy decisions
 src/tool.rs      tool-call and tool-result boundary types
 src/event.rs     durable harness event ledger
-src/run.rs       pure run/turn state machine (v0.2, #1)
+src/run.rs       pure run/turn state machine
 ```
 
 Keep modules narrow. If a module starts pulling in IO, provider clients, runtime
@@ -83,7 +83,7 @@ belongs in an outer crate.
 
 ### Agent unit
 
-A bounded agent unit (`AgentId` — v0.2 rename from `HenadId`, #1): not a personality blob, but an execution identity with policy, tools, and state scope. Deep-vocabulary name: henad — docs only, never identifiers.
+A bounded agent unit (`AgentId`): not a personality blob, but an execution identity with policy, tools, and state scope. Deep-vocabulary name: henad — docs only, never identifiers.
 
 ### Run
 
@@ -105,7 +105,7 @@ The assembler must validate budget before a model call. No hidden prompt growth.
 
 ### ToolCall
 
-The model authors only a `ToolProposal`: registered tool name plus JSON input. The host/registry validates the input and attaches the `EffectClass` to form the `ToolCall` with a stable call id. Effect is never model-declared. The registry itself lives outside this crate; core tracks the boundary. Current code predates this split; it lands in v0.2 (#1).
+The model authors only a `ToolProposal`: registered tool name plus JSON input. The host/registry validates the input and attaches the `EffectClass` to form the `ToolCall` with a stable call id. Effect is never model-declared. `ToolCall.input` is the proposed input verbatim after validation; normalization or default expansion happens during execution, not in the recorded call. The registry itself lives outside this crate; core tracks the boundary.
 
 ### EffectClass
 
@@ -133,14 +133,18 @@ The durable ledger. Initial events include:
 - `run_started`
 - `context_built`
 - `model_requested`
+- `model_responded`
 - `tool_call_proposed`
 - `policy_evaluated`
+- `approval_granted`
+- `approval_denied`
 - `tool_started`
 - `tool_finished`
+- `tool_failed`
 - `run_finished`
 - `run_failed`
 
-The vocabulary is not replay-complete yet. Required in v0.2 (#1), before `run`: model response (output, proposed calls, usage), approval lifecycle (granted/denied, with actor), and a failure taxonomy starting with `tool_failed`. From v0.2, events are recorded wrapped in `RecordedEvent { seq, occurred_at_ms, event }`; hosts supply both fields — core never reads clocks. `seq` is per-run and contiguous from 0; the run machine rejects gaps and regressions. Store append is idempotent on `(run_id, seq)`; ordering across runs is a store concern. Correlation: tool events carry `call_id`; model request/response pairs carry a per-run `step` counter. Ledger variants are never cargo-feature-gated: one schema, always readable.
+Events are recorded wrapped in `RecordedEvent { seq, occurred_at_ms, event }`; hosts supply both fields — core never reads clocks. `seq` is per-run and contiguous from 0; the run machine rejects gaps and regressions. Store append is idempotent on `(run_id, seq)`; ordering across runs is a store concern. Correlation: tool events carry `call_id`; model request/response pairs carry a per-run `step` counter. Ledger variants are never cargo-feature-gated: one schema, always readable.
 
 Future storage backends can persist these events to SQLite, Postgres, files, or an append-only log.
 
@@ -157,13 +161,15 @@ Cargo features, if ever, gate helpers only — when a second embedding needs a d
 
 ## First proof
 
-The contract is sharp when a scripted fake host drives these through `run` with exact state, command, and event assertions:
+The contract is sharp because scripted fake-host tests drive these through `run` with exact state, command, and event assertions:
 
 - happy path: propose → approval required → granted → executed → finished;
 - denial path: denied → no `execute_tool` command ever emitted;
 - failure path: tool fails → typed failure recorded, run ends failed;
 - ordering: out-of-order events rejected; no commands after a terminal event; context budget validated before any model request;
 - replay: re-applying the log reproduces final state with zero model calls and zero tool executions.
+
+The v0.2 machine intentionally proves one model turn and at most one host-validated tool call, then finish/fail. Feeding tool results into later model turns and defining multi-proposal semantics are deferred to issue #4.
 
 No new crates for this; a fake host in tests is enough.
 

@@ -4,14 +4,25 @@ use crate::{ArtifactId, EffectClass, ToolCallId, ToolName};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// A tool invocation proposed by a model and evaluated by policy.
+/// A model-authored tool proposal before host validation.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolProposal {
+    /// Registered tool name requested by the model.
+    pub tool: ToolName,
+    /// JSON input to validate against the registered schema.
+    pub input: Value,
+}
+
+/// A host-validated tool invocation evaluated by policy.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ToolCall {
     /// Stable call id assigned by the harness.
     pub id: ToolCallId,
     /// Registered tool name.
     pub tool: ToolName,
-    /// Declared effect class.
+    /// Host/registry-declared effect class.
     pub effect: EffectClass,
     /// JSON input validated against the registered tool schema.
     pub input: Value,
@@ -31,6 +42,7 @@ pub enum ResultVisibility {
 
 /// Structured tool result; raw output should be kept as an artifact when large.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ToolResult {
     /// Tool call this result answers.
     pub call_id: ToolCallId,

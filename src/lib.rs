@@ -12,12 +12,14 @@ pub mod event;
 pub mod ids;
 pub mod message;
 pub mod policy;
+pub mod run;
 pub mod tool;
 
 pub use context::{ContextFragment, ContextLane, ContextPack};
-pub use error::PlatonicError;
-pub use event::HarnessEvent;
-pub use ids::{ArtifactId, HenadId, ModelName, RunId, ToolCallId, ToolName, TurnId};
+pub use error::Error;
+pub use event::{HarnessEvent, ModelUsage, RecordedEvent};
+pub use ids::{ActorId, AgentId, ArtifactId, ModelName, RunId, ToolCallId, ToolName, TurnId};
 pub use message::{Message, MessageRole};
 pub use policy::{EffectClass, PolicyDecision};
-pub use tool::{ResultVisibility, ToolCall, ToolResult};
+pub use run::{RunCommand, RunPhase, RunState};
+pub use tool::{ResultVisibility, ToolCall, ToolProposal, ToolResult};

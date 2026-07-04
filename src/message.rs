@@ -18,6 +18,7 @@ pub enum MessageRole {
 
 /// Message passed through the model boundary.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Message {
     /// Message role.
     pub role: MessageRole,
