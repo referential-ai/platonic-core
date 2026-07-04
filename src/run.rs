@@ -44,17 +44,17 @@ pub enum RunPhase {
     AwaitingPolicy { call: ToolCall },
     /// Policy requires approval before tool execution.
     AwaitingApproval { call: ToolCall, reason: String },
-    /// Policy denied the tool call.
+    /// Policy denied the tool call; the turn is concluded and may continue or fail.
     PolicyDenied { call_id: ToolCallId, reason: String },
-    /// A human or host actor denied the pending approval.
+    /// A human or host actor denied the pending approval; the turn is concluded and may continue or fail.
     ApprovalDenied { call_id: ToolCallId, reason: String },
     /// The tool call may be executed.
     ReadyToExecuteTool { call: ToolCall },
     /// Tool execution has started.
     ToolRunning { call_id: ToolCallId },
-    /// A tool failed and the run should be failed.
+    /// A tool failed; the turn is concluded and may continue or fail.
     ToolFailed { call_id: ToolCallId, reason: String },
-    /// The run may be finished.
+    /// The current turn completed successfully; the host may finish or continue.
     ReadyToFinish,
     /// The run finished successfully.
     Finished,
@@ -68,6 +68,7 @@ pub struct RunState {
     run_id: Option<RunId>,
     next_seq: u64,
     next_model_step: u32,
+    last_turn_id: Option<TurnId>,
     phase: RunPhase,
 }
 
@@ -84,6 +85,7 @@ impl RunState {
             run_id: None,
             next_seq: 0,
             next_model_step: 0,
+            last_turn_id: None,
             phase: RunPhase::NotStarted,
         }
     }
@@ -158,19 +160,15 @@ impl RunState {
                 Ok(())
             }
             (
-                RunPhase::ReadyForContext,
+                RunPhase::ReadyForContext
+                | RunPhase::ReadyToFinish
+                | RunPhase::PolicyDenied { .. }
+                | RunPhase::ApprovalDenied { .. }
+                | RunPhase::ToolFailed { .. },
                 HarnessEvent::ContextBuilt {
                     turn_id, context, ..
                 },
-            ) => {
-                context.validate_budget()?;
-                self.phase = RunPhase::ReadyToRequestModel {
-                    turn_id: turn_id.clone(),
-                    step: self.next_model_step,
-                    context: context.clone(),
-                };
-                Ok(())
-            }
+            ) => self.start_turn(turn_id, context),
             (
                 RunPhase::ReadyToRequestModel {
                     turn_id,
@@ -314,6 +312,18 @@ impl RunState {
             _ => Err(invalid(&self.phase, event)),
         }
     }
+
+    fn start_turn(&mut self, turn_id: &TurnId, context: &ContextPack) -> Result<(), Error> {
+        ensure_new_turn(self.last_turn_id.as_ref(), turn_id)?;
+        context.validate_budget()?;
+        self.last_turn_id = Some(turn_id.clone());
+        self.phase = RunPhase::ReadyToRequestModel {
+            turn_id: turn_id.clone(),
+            step: self.next_model_step,
+            context: context.clone(),
+        };
+        Ok(())
+    }
 }
 
 impl RunPhase {
@@ -353,6 +363,15 @@ fn ensure_turn(expected: &TurnId, actual: &TurnId) -> Result<(), Error> {
         expected: expected.to_string(),
         actual: actual.to_string(),
     })
+}
+
+fn ensure_new_turn(previous: Option<&TurnId>, actual: &TurnId) -> Result<(), Error> {
+    if previous.is_some_and(|previous| previous == actual) {
+        return Err(Error::TurnReused {
+            turn_id: actual.to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn ensure_step(expected: u32, actual: u32) -> Result<(), Error> {
@@ -418,6 +437,10 @@ mod tests {
         TurnId::new("turn_2").unwrap()
     }
 
+    fn third_turn_id() -> TurnId {
+        TurnId::new("turn_3").unwrap()
+    }
+
     fn call_id() -> ToolCallId {
         ToolCallId::new("call_1").unwrap()
     }
@@ -427,12 +450,16 @@ mod tests {
     }
 
     fn context(tokens: u32) -> ContextPack {
+        context_with_content(tokens, "read README")
+    }
+
+    fn context_with_content(tokens: u32, content: &str) -> ContextPack {
         ContextPack {
             token_budget: 100,
             fragments: vec![ContextFragment {
                 lane: ContextLane::CurrentTask,
                 source: "user".into(),
-                content: "read README".into(),
+                content: content.into(),
                 estimated_tokens: tokens,
             }],
         }
@@ -445,12 +472,28 @@ mod tests {
         }
     }
 
+    fn write_proposal() -> ToolProposal {
+        ToolProposal {
+            tool: ToolName::new("file.write").unwrap(),
+            input: json!({ "path": "README.md", "content": "updated" }),
+        }
+    }
+
     fn call(effect: EffectClass) -> ToolCall {
         ToolCall {
             id: call_id(),
             tool: ToolName::new("file.read").unwrap(),
             effect,
             input: json!({ "path": "README.md" }),
+        }
+    }
+
+    fn write_call(effect: EffectClass) -> ToolCall {
+        ToolCall {
+            id: call_id(),
+            tool: ToolName::new("file.write").unwrap(),
+            effect,
+            input: json!({ "path": "README.md", "content": "updated" }),
         }
     }
 
@@ -490,43 +533,91 @@ mod tests {
     }
 
     fn context_event(seq: u64) -> RecordedEvent {
+        context_event_for(seq, turn_id(), "read README")
+    }
+
+    fn second_context_event(seq: u64) -> RecordedEvent {
+        context_event_for(seq, other_turn_id(), "tool result: read README")
+    }
+
+    fn third_context_event(seq: u64) -> RecordedEvent {
+        context_event_for(seq, third_turn_id(), "tool failed: retry differently")
+    }
+
+    fn context_event_for(seq: u64, turn_id: TurnId, content: &str) -> RecordedEvent {
         rec(
             seq,
             HarnessEvent::ContextBuilt {
                 run_id: run_id(),
-                turn_id: turn_id(),
-                context: context(10),
+                turn_id,
+                context: context_with_content(10, content),
             },
         )
     }
 
     fn model_requested(seq: u64) -> RecordedEvent {
+        model_requested_for(seq, turn_id(), 0)
+    }
+
+    fn second_model_requested(seq: u64) -> RecordedEvent {
+        model_requested_for(seq, other_turn_id(), 1)
+    }
+
+    fn third_model_requested(seq: u64) -> RecordedEvent {
+        model_requested_for(seq, third_turn_id(), 1)
+    }
+
+    fn model_requested_for(seq: u64, turn_id: TurnId, step: u32) -> RecordedEvent {
         rec(
             seq,
             HarnessEvent::ModelRequested {
                 run_id: run_id(),
-                turn_id: turn_id(),
-                step: 0,
+                turn_id,
+                step,
                 model: ModelName::new("claude-fable-5").unwrap(),
             },
         )
     }
 
     fn model_responded(seq: u64) -> RecordedEvent {
+        model_responded_with(
+            seq,
+            turn_id(),
+            0,
+            "I should read the file.",
+            vec![proposal()],
+        )
+    }
+
+    fn model_responded_with(
+        seq: u64,
+        turn_id: TurnId,
+        step: u32,
+        output: &str,
+        proposed_calls: Vec<ToolProposal>,
+    ) -> RecordedEvent {
         rec(
             seq,
             HarnessEvent::ModelResponded {
                 run_id: run_id(),
-                turn_id: turn_id(),
-                step: 0,
+                turn_id,
+                step,
                 output: Message {
                     role: MessageRole::Assistant,
-                    content: "I should read the file.".into(),
+                    content: output.into(),
                 },
-                proposed_calls: vec![proposal()],
+                proposed_calls,
                 usage: usage(),
             },
         )
+    }
+
+    fn second_model_answer(seq: u64) -> RecordedEvent {
+        model_responded_with(seq, other_turn_id(), 1, "The README was read.", vec![])
+    }
+
+    fn third_model_answer(seq: u64) -> RecordedEvent {
+        model_responded_with(seq, third_turn_id(), 1, "Recovered from failure.", vec![])
     }
 
     fn tool_proposed(seq: u64, effect: EffectClass) -> RecordedEvent {
@@ -582,6 +673,17 @@ mod tests {
         )
     }
 
+    fn allow_policy(seq: u64) -> RecordedEvent {
+        rec(
+            seq,
+            HarnessEvent::PolicyEvaluated {
+                run_id: run_id(),
+                call_id: call_id(),
+                decision: PolicyDecision::Allow,
+            },
+        )
+    }
+
     fn approval_granted(seq: u64) -> RecordedEvent {
         rec(
             seq,
@@ -589,6 +691,37 @@ mod tests {
                 run_id: run_id(),
                 call_id: call_id(),
                 actor_id: actor_id(),
+            },
+        )
+    }
+
+    fn tool_started(seq: u64) -> RecordedEvent {
+        rec(
+            seq,
+            HarnessEvent::ToolStarted {
+                run_id: run_id(),
+                call_id: call_id(),
+            },
+        )
+    }
+
+    fn tool_finished(seq: u64) -> RecordedEvent {
+        rec(
+            seq,
+            HarnessEvent::ToolFinished {
+                run_id: run_id(),
+                result: result(),
+            },
+        )
+    }
+
+    fn tool_failed(seq: u64) -> RecordedEvent {
+        rec(
+            seq,
+            HarnessEvent::ToolFailed {
+                run_id: run_id(),
+                call_id: call_id(),
+                reason: "tool crashed".into(),
             },
         )
     }
@@ -666,6 +799,220 @@ mod tests {
         assert_eq!(state.phase(), &RunPhase::Finished);
         assert_eq!(state.next_seq(), 10);
         assert_eq!(apply_all(&events), state);
+    }
+
+    #[test]
+    fn tool_result_can_feed_a_second_model_turn() {
+        let events = vec![
+            start_event(0),
+            context_event(1),
+            model_requested(2),
+            model_responded(3),
+            tool_proposed(4, EffectClass::ReadOnly),
+            allow_policy(5),
+            tool_started(6),
+            tool_finished(7),
+            second_context_event(8),
+            second_model_requested(9),
+            second_model_answer(10),
+            rec(11, HarnessEvent::RunFinished { run_id: run_id() }),
+        ];
+
+        let mut state = RunState::new();
+        for event in &events[..9] {
+            state.apply(event).unwrap();
+        }
+        assert!(matches!(
+            state.pending_command(),
+            Some(RunCommand::RequestModel { step: 1, .. })
+        ));
+
+        for event in &events[9..] {
+            state.apply(event).unwrap();
+        }
+
+        assert_eq!(state.phase(), &RunPhase::Finished);
+        assert_eq!(state.next_seq(), 12);
+        assert_eq!(apply_all(&events), state);
+    }
+
+    #[test]
+    fn policy_denial_can_feed_a_second_model_turn_without_tool_execution() {
+        let events = vec![
+            start_event(0),
+            context_event(1),
+            model_requested(2),
+            model_responded(3),
+            tool_proposed(4, EffectClass::SecretAccess),
+            deny_policy(5),
+            second_context_event(6),
+            second_model_requested(7),
+            second_model_answer(8),
+            rec(9, HarnessEvent::RunFinished { run_id: run_id() }),
+        ];
+
+        let mut state = RunState::new();
+        for event in &events[..6] {
+            state.apply(event).unwrap();
+        }
+        assert!(state.pending_command().is_none());
+        assert!(matches!(state.phase(), RunPhase::PolicyDenied { .. }));
+
+        for event in &events[6..] {
+            state.apply(event).unwrap();
+        }
+
+        assert_eq!(state.phase(), &RunPhase::Finished);
+        assert_eq!(apply_all(&events), state);
+    }
+
+    #[test]
+    fn approval_denial_can_feed_a_second_model_turn_without_tool_execution() {
+        let mut events = base_until_approval_required();
+        events.push(rec(
+            6,
+            HarnessEvent::ApprovalDenied {
+                run_id: run_id(),
+                call_id: call_id(),
+                actor_id: actor_id(),
+                reason: "no".into(),
+            },
+        ));
+        events.push(second_context_event(7));
+        events.push(second_model_requested(8));
+        events.push(second_model_answer(9));
+        events.push(rec(10, HarnessEvent::RunFinished { run_id: run_id() }));
+
+        let mut state = RunState::new();
+        for event in &events[..7] {
+            state.apply(event).unwrap();
+        }
+        assert!(state.pending_command().is_none());
+        assert!(matches!(state.phase(), RunPhase::ApprovalDenied { .. }));
+
+        for event in &events[7..] {
+            state.apply(event).unwrap();
+        }
+
+        assert_eq!(state.phase(), &RunPhase::Finished);
+        assert_eq!(apply_all(&events), state);
+    }
+
+    #[test]
+    fn tool_failure_can_feed_a_second_model_turn() {
+        let events = vec![
+            start_event(0),
+            context_event(1),
+            model_requested(2),
+            model_responded(3),
+            tool_proposed(4, EffectClass::ReadOnly),
+            allow_policy(5),
+            tool_started(6),
+            tool_failed(7),
+            third_context_event(8),
+            third_model_requested(9),
+            third_model_answer(10),
+            rec(11, HarnessEvent::RunFinished { run_id: run_id() }),
+        ];
+
+        let state = apply_all(&events);
+        assert_eq!(state.phase(), &RunPhase::Finished);
+    }
+
+    #[test]
+    fn concluded_turn_cannot_reuse_turn_id() {
+        let events = [
+            start_event(0),
+            context_event(1),
+            model_requested(2),
+            model_responded(3),
+            tool_proposed(4, EffectClass::ReadOnly),
+            allow_policy(5),
+            tool_started(6),
+            tool_finished(7),
+        ];
+        let mut state = apply_all(&events);
+
+        let err = state
+            .apply(&context_event_for(8, turn_id(), "reuse turn id"))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            Error::TurnReused {
+                turn_id: "turn_1".into()
+            }
+        );
+    }
+
+    #[test]
+    fn second_turn_step_mismatches_are_rejected() {
+        let events = [
+            start_event(0),
+            context_event(1),
+            model_requested(2),
+            model_responded(3),
+            tool_proposed(4, EffectClass::ReadOnly),
+            allow_policy(5),
+            tool_started(6),
+            tool_finished(7),
+            second_context_event(8),
+        ];
+        let mut state = apply_all(&events);
+
+        let err = state
+            .apply(&model_requested_for(9, other_turn_id(), 0))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            Error::StepMismatch {
+                expected: 1,
+                actual: 0
+            }
+        );
+    }
+
+    #[test]
+    fn multiple_proposals_are_recorded_but_only_one_is_consumed_per_turn() {
+        let mut state = RunState::new();
+        for event in &[
+            start_event(0),
+            context_event(1),
+            model_requested(2),
+            model_responded_with(
+                3,
+                turn_id(),
+                0,
+                "I can read or write.",
+                vec![proposal(), write_proposal()],
+            ),
+        ] {
+            state.apply(event).unwrap();
+        }
+
+        assert!(matches!(
+            state.phase(),
+            RunPhase::AwaitingToolCall { proposals, .. } if proposals.len() == 2
+        ));
+
+        state
+            .apply(&rec(
+                4,
+                HarnessEvent::ToolCallProposed {
+                    run_id: run_id(),
+                    turn_id: turn_id(),
+                    call: write_call(EffectClass::WorkspaceWrite),
+                },
+            ))
+            .unwrap();
+
+        let err = state.apply(&tool_proposed(5, EffectClass::ReadOnly));
+        assert_eq!(
+            err,
+            Err(Error::InvalidTransition {
+                phase: "awaiting_policy",
+                event: "tool_call_proposed"
+            })
+        );
     }
 
     #[test]

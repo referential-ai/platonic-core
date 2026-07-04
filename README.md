@@ -54,4 +54,4 @@ cargo test
 
 ## Status
 
-Seed kernel. The first run contract is implemented as a pure state machine; outer apps still own IO, providers, tools, stores, gateways, and schedulers.
+Seed kernel. The run contract is implemented as a pure multi-turn state machine; outer apps still own IO, providers, tools, stores, gateways, and schedulers.

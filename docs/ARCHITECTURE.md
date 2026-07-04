@@ -169,7 +169,14 @@ The contract is sharp because scripted fake-host tests drive these through `run`
 - ordering: out-of-order events rejected; no commands after a terminal event; context budget validated before any model request;
 - replay: re-applying the log reproduces final state with zero model calls and zero tool executions.
 
-The v0.2 machine intentionally proves one model turn and at most one host-validated tool call, then finish/fail. Feeding tool results into later model turns and defining multi-proposal semantics are deferred to issue #4.
+The multi-turn proof extends that contract without adding IO or runtime machinery:
+
+- a successful tool result can conclude one turn and feed a later host-built context/model turn;
+- policy denial, approval denial, and tool failure can also conclude a turn and continue through later host-built context;
+- each turn consumes at most one host-validated tool call, while `model_responded` records all proposals as ledger facts;
+- immediate `turn_id` reuse after a concluded turn is rejected;
+- model `step` sequencing continues across turns;
+- replay over a two-turn ledger still emits zero model calls and zero tool executions.
 
 No new crates for this; a fake host in tests is enough.
 
