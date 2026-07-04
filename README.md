@@ -33,8 +33,9 @@ context  lane-labeled context packs with budget validation
 policy   effect classes and policy decisions
 tool     tool-call and tool-result boundaries
 event    durable harness event ledger
-run      pure run state machine
-error    shared error types
+run        pure run state machine
+projection pure run readback projection
+error      shared error types
 ```
 
 The first contract defines serializable primitives:
@@ -45,6 +46,7 @@ The first contract defines serializable primitives:
 - `ToolProposal`, `ToolCall`, `ToolResult`, `ResultVisibility`
 - `RecordedEvent`, `HarnessEvent`, `ModelUsage`
 - `RunState`, `RunPhase`, `RunCommand`
+- `RunReadback`, `ReadbackEntry`
 
 ## Verify
 
@@ -54,4 +56,4 @@ cargo test
 
 ## Status
 
-Seed kernel. The run contract is implemented as a pure multi-turn state machine; outer apps still own IO, providers, tools, stores, gateways, and schedulers.
+Seed kernel. The run contract is implemented as a pure multi-turn state machine with replay-validated readback projections; outer apps still own IO, providers, tools, stores, gateways, renderers, and schedulers.

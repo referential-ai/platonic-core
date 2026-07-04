@@ -55,7 +55,7 @@ pub enum RunPhase {
     /// A tool failed; the turn is concluded and may continue or fail.
     ToolFailed { call_id: ToolCallId, reason: String },
     /// The current turn completed successfully; the host may finish or continue.
-    ReadyToFinish,
+    TurnConcluded,
     /// The run finished successfully.
     Finished,
     /// The run finished unsuccessfully.
@@ -161,7 +161,7 @@ impl RunState {
             }
             (
                 RunPhase::ReadyForContext
-                | RunPhase::ReadyToFinish
+                | RunPhase::TurnConcluded
                 | RunPhase::PolicyDenied { .. }
                 | RunPhase::ApprovalDenied { .. }
                 | RunPhase::ToolFailed { .. },
@@ -202,7 +202,7 @@ impl RunState {
                 ensure_step(*step, *actual_step)?;
                 self.next_model_step += 1;
                 self.phase = if proposed_calls.is_empty() {
-                    RunPhase::ReadyToFinish
+                    RunPhase::TurnConcluded
                 } else {
                     RunPhase::AwaitingToolCall {
                         turn_id: turn_id.clone(),
@@ -280,7 +280,7 @@ impl RunState {
             }
             (RunPhase::ToolRunning { call_id }, HarnessEvent::ToolFinished { result, .. }) => {
                 ensure_call(call_id, &result.call_id)?;
-                self.phase = RunPhase::ReadyToFinish;
+                self.phase = RunPhase::TurnConcluded;
                 Ok(())
             }
             (
@@ -298,7 +298,7 @@ impl RunState {
                 };
                 Ok(())
             }
-            (RunPhase::ReadyToFinish, HarnessEvent::RunFinished { .. }) => {
+            (RunPhase::TurnConcluded, HarnessEvent::RunFinished { .. }) => {
                 self.phase = RunPhase::Finished;
                 Ok(())
             }
@@ -341,7 +341,7 @@ impl RunPhase {
             Self::ReadyToExecuteTool { .. } => "ready_to_execute_tool",
             Self::ToolRunning { .. } => "tool_running",
             Self::ToolFailed { .. } => "tool_failed",
-            Self::ReadyToFinish => "ready_to_finish",
+            Self::TurnConcluded => "turn_concluded",
             Self::Finished => "finished",
             Self::Failed { .. } => "failed",
         }

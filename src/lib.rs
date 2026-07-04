@@ -12,6 +12,7 @@ pub mod event;
 pub mod ids;
 pub mod message;
 pub mod policy;
+pub mod projection;
 pub mod run;
 pub mod tool;
 
@@ -21,5 +22,6 @@ pub use event::{HarnessEvent, ModelUsage, RecordedEvent};
 pub use ids::{ActorId, AgentId, ArtifactId, ModelName, RunId, ToolCallId, ToolName, TurnId};
 pub use message::{Message, MessageRole};
 pub use policy::{EffectClass, PolicyDecision};
+pub use projection::{ReadbackEntry, RunReadback};
 pub use run::{RunCommand, RunPhase, RunState};
 pub use tool::{ResultVisibility, ToolCall, ToolProposal, ToolResult};

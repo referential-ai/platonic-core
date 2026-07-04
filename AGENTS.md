@@ -12,6 +12,7 @@ This repo is the small Rust harness kernel for the planned Platonic / Plato Agen
 - No `unsafe` in the core crate.
 - Prefer explicit types over stringly runtime behavior.
 - If a feature feels like Hermes-style sprawl, put it in an outer crate or a doc until proven.
+- PRs: CI green is necessary, not sufficient. Merge requires explicit human instruction or independent review; a generic "proceed" is not merge authority.
 - Simplicity directive (binding): extremely terse and minimal everywhere. Full text: `AGENTS.md` in `referential-ai/platonic-workspace`.
 
 ## Verification
