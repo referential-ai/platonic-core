@@ -51,6 +51,11 @@ pub enum ReadbackEntry {
     ToolResult { result: ToolResult },
     /// Policy denied a tool call before execution.
     PolicyDenied { call_id: ToolCallId, reason: String },
+    /// Approval granted a tool call before execution.
+    ApprovalGranted {
+        call_id: ToolCallId,
+        actor_id: ActorId,
+    },
     /// Approval denied a tool call before execution.
     ApprovalDenied {
         call_id: ToolCallId,
@@ -102,6 +107,14 @@ fn collect_entry(event: &HarnessEvent, entries: &mut Vec<ReadbackEntry>) {
                 reason: reason.clone(),
             });
         }
+        HarnessEvent::ApprovalGranted {
+            call_id, actor_id, ..
+        } => {
+            entries.push(ReadbackEntry::ApprovalGranted {
+                call_id: call_id.clone(),
+                actor_id: actor_id.clone(),
+            });
+        }
         HarnessEvent::ApprovalDenied {
             call_id,
             actor_id,
@@ -122,7 +135,15 @@ fn collect_entry(event: &HarnessEvent, entries: &mut Vec<ReadbackEntry>) {
                 reason: reason.clone(),
             });
         }
-        _ => {}
+        HarnessEvent::RunStarted { .. }
+        | HarnessEvent::ModelRequested { .. }
+        | HarnessEvent::PolicyEvaluated {
+            decision: PolicyDecision::Allow | PolicyDecision::RequireApproval { .. },
+            ..
+        }
+        | HarnessEvent::ToolStarted { .. }
+        | HarnessEvent::RunFinished { .. }
+        | HarnessEvent::RunFailed { .. } => {}
     }
 }
 
@@ -541,6 +562,56 @@ mod tests {
                 .iter()
                 .any(|entry| matches!(entry, ReadbackEntry::ToolResult { .. }))
         );
+    }
+
+    #[test]
+    fn approval_grants_are_projected_with_actor() {
+        let events = vec![
+            start_event(0),
+            rec(1, context(turn_id(), "Read README")),
+            rec(2, model_requested(turn_id(), 0)),
+            rec(
+                3,
+                model_responded(turn_id(), 0, "I will read it.", vec![proposal()]),
+            ),
+            rec(
+                4,
+                HarnessEvent::ToolCallProposed {
+                    run_id: run_id(),
+                    turn_id: turn_id(),
+                    call: call(),
+                },
+            ),
+            rec(
+                5,
+                HarnessEvent::PolicyEvaluated {
+                    run_id: run_id(),
+                    call_id: call_id(),
+                    decision: PolicyDecision::RequireApproval {
+                        reason: "approval needed".into(),
+                    },
+                },
+            ),
+            rec(
+                6,
+                HarnessEvent::ApprovalGranted {
+                    run_id: run_id(),
+                    call_id: call_id(),
+                    actor_id: actor_id(),
+                },
+            ),
+        ];
+
+        let readback = RunReadback::from_events(&events).unwrap();
+
+        assert_eq!(
+            readback.final_phase,
+            RunPhase::ReadyToExecuteTool { call: call() }
+        );
+        assert!(readback.entries.contains(&ReadbackEntry::ApprovalGranted {
+            call_id: call_id(),
+            actor_id: actor_id(),
+        }));
     }
 
     #[test]
