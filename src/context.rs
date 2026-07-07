@@ -50,18 +50,22 @@ pub struct ContextPack {
 impl ContextPack {
     /// Returns estimated token usage across fragments.
     pub fn estimated_tokens(&self) -> u32 {
+        self.estimated_tokens_u64().min(u64::from(u32::MAX)) as u32
+    }
+
+    fn estimated_tokens_u64(&self) -> u64 {
         self.fragments
             .iter()
-            .map(|fragment| fragment.estimated_tokens)
+            .map(|fragment| u64::from(fragment.estimated_tokens))
             .sum()
     }
 
     /// Verifies the context pack fits inside its budget.
     pub fn validate_budget(&self) -> Result<(), Error> {
-        let used = self.estimated_tokens();
-        if used > self.token_budget {
+        let used = self.estimated_tokens_u64();
+        if used > u64::from(self.token_budget) {
             return Err(Error::ContextBudgetExceeded {
-                used,
+                used: used.min(u64::from(u32::MAX)) as u32,
                 budget: self.token_budget,
             });
         }
@@ -90,6 +94,37 @@ mod tests {
             Err(Error::ContextBudgetExceeded {
                 used: 11,
                 budget: 10
+            })
+        ));
+    }
+
+    #[test]
+    fn context_budget_rejects_overflowing_fragment_sum() {
+        let large_fragment = u32::MAX / 2 + 1;
+        let pack = ContextPack {
+            token_budget: u32::MAX,
+            fragments: vec![
+                ContextFragment {
+                    lane: ContextLane::CurrentTask,
+                    source: "first".into(),
+                    content: "test".into(),
+                    estimated_tokens: large_fragment,
+                },
+                ContextFragment {
+                    lane: ContextLane::RetrievedContext,
+                    source: "second".into(),
+                    content: "test".into(),
+                    estimated_tokens: large_fragment,
+                },
+            ],
+        };
+
+        assert_eq!(pack.estimated_tokens(), u32::MAX);
+        assert!(matches!(
+            pack.validate_budget(),
+            Err(Error::ContextBudgetExceeded {
+                used: u32::MAX,
+                budget: u32::MAX
             })
         ));
     }
