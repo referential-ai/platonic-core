@@ -10,14 +10,25 @@ use crate::{
 pub enum RunCommand {
     /// Ask the host to make a model request.
     RequestModel {
+        /// Turn whose bounded context is ready.
         turn_id: TurnId,
+        /// Monotonic model step to record with the request and response.
         step: u32,
+        /// Validated context to submit to the model provider.
         context: ContextPack,
     },
     /// Ask the host to obtain approval for a tool call.
-    AwaitApproval { call_id: ToolCallId, reason: String },
+    AwaitApproval {
+        /// Pending call requiring an approval decision.
+        call_id: ToolCallId,
+        /// Policy explanation to present to the approver.
+        reason: String,
+    },
     /// Ask the host to execute a validated tool call.
-    ExecuteTool { call: ToolCall },
+    ExecuteTool {
+        /// Approved or policy-allowed call ready for execution.
+        call: ToolCall,
+    },
 }
 
 /// Current phase of one run.
@@ -29,40 +40,191 @@ pub enum RunPhase {
     ReadyForContext,
     /// Context is built and the next command is a model request.
     ReadyToRequestModel {
+        /// Turn whose context is ready.
         turn_id: TurnId,
+        /// Monotonic model step expected in the request and response events.
         step: u32,
+        /// Budget-validated context to send to the model.
         context: ContextPack,
     },
     /// A model request was recorded; the run is waiting for the response.
-    AwaitingModelResponse { turn_id: TurnId, step: u32 },
+    AwaitingModelResponse {
+        /// Turn awaiting a model response.
+        turn_id: TurnId,
+        /// Model step the response must match.
+        step: u32,
+    },
     /// The model response contained at least one tool proposal.
     AwaitingToolCall {
+        /// Turn that produced the proposals.
         turn_id: TurnId,
+        /// Model-authored proposals awaiting host validation and classification.
         proposals: Vec<ToolProposal>,
     },
     /// A validated tool call is waiting for policy evaluation.
-    AwaitingPolicy { call: ToolCall },
+    AwaitingPolicy {
+        /// Validated and effect-classified call to evaluate.
+        call: ToolCall,
+    },
     /// Policy requires approval before tool execution.
-    AwaitingApproval { call: ToolCall, reason: String },
+    AwaitingApproval {
+        /// Call withheld until approval is recorded.
+        call: ToolCall,
+        /// Policy explanation for requiring approval.
+        reason: String,
+    },
     /// Policy denied the tool call; the turn is concluded and may continue or fail.
-    PolicyDenied { call_id: ToolCallId, reason: String },
+    PolicyDenied {
+        /// Call rejected by policy.
+        call_id: ToolCallId,
+        /// Recorded policy explanation.
+        reason: String,
+    },
     /// A human or host actor denied the pending approval; the turn is concluded and may continue or fail.
-    ApprovalDenied { call_id: ToolCallId, reason: String },
+    ApprovalDenied {
+        /// Call denied before execution.
+        call_id: ToolCallId,
+        /// Recorded approval denial explanation.
+        reason: String,
+    },
     /// The tool call may be executed.
-    ReadyToExecuteTool { call: ToolCall },
+    ReadyToExecuteTool {
+        /// Policy-allowed or approved call ready for host execution.
+        call: ToolCall,
+    },
     /// Tool execution has started.
-    ToolRunning { call_id: ToolCallId },
+    ToolRunning {
+        /// Call that crossed the host execution boundary.
+        call_id: ToolCallId,
+    },
     /// A tool failed; the turn is concluded and may continue or fail.
-    ToolFailed { call_id: ToolCallId, reason: String },
+    ToolFailed {
+        /// Call whose execution failed.
+        call_id: ToolCallId,
+        /// Recorded host failure explanation.
+        reason: String,
+    },
     /// The current turn completed successfully; the host may finish or continue.
     TurnConcluded,
     /// The run finished successfully.
     Finished,
     /// The run finished unsuccessfully.
-    Failed { reason: String },
+    Failed {
+        /// Durable terminal failure explanation.
+        reason: String,
+    },
 }
 
-/// Durable state for one run.
+/// Durable state derived by replaying one run's ordered event ledger.
+///
+/// The state machine performs no IO. Hosts inspect [`Self::pending_command`], perform
+/// the requested effect, and then apply the resulting recorded event.
+///
+/// # Examples
+///
+/// A tool turn advances only after the proposed call is validated, approved,
+/// executed, and recorded:
+///
+/// ```
+/// use platonic_core::*;
+/// use serde_json::json;
+///
+/// # fn main() -> Result<(), Error> {
+/// let run_id = RunId::new("run-1")?;
+/// let turn_id = TurnId::new("turn-1")?;
+/// let call_id = ToolCallId::new("call-1")?;
+/// let tool = ToolName::new("file.write")?;
+/// let input = json!({"path": "note.txt", "content": "done"});
+/// let proposal = ToolProposal {
+///     tool: tool.clone(),
+///     input: input.clone(),
+/// };
+/// let call = ToolCall {
+///     id: call_id.clone(),
+///     tool,
+///     effect: EffectClass::WorkspaceWrite,
+///     input,
+/// };
+///
+/// let events = vec![
+///     HarnessEvent::RunStarted {
+///         run_id: run_id.clone(),
+///         agent_id: AgentId::new("agent-1")?,
+///     },
+///     HarnessEvent::ContextBuilt {
+///         run_id: run_id.clone(),
+///         turn_id: turn_id.clone(),
+///         context: ContextPack { token_budget: 10, fragments: vec![] },
+///     },
+///     HarnessEvent::ModelRequested {
+///         run_id: run_id.clone(),
+///         turn_id: turn_id.clone(),
+///         step: 0,
+///         model: ModelName::new("model-1")?,
+///     },
+///     HarnessEvent::ModelResponded {
+///         run_id: run_id.clone(),
+///         turn_id: turn_id.clone(),
+///         step: 0,
+///         output: Message {
+///             role: MessageRole::Assistant,
+///             content: "I will write the file.".into(),
+///         },
+///         proposed_calls: vec![proposal],
+///         usage: ModelUsage { input_tokens: 3, output_tokens: 5 },
+///     },
+///     HarnessEvent::ToolCallProposed {
+///         run_id: run_id.clone(),
+///         turn_id,
+///         call: call.clone(),
+///     },
+///     HarnessEvent::PolicyEvaluated {
+///         run_id: run_id.clone(),
+///         call_id: call_id.clone(),
+///         decision: PolicyDecision::RequireApproval {
+///             reason: "workspace write".into(),
+///         },
+///     },
+///     HarnessEvent::ApprovalGranted {
+///         run_id: run_id.clone(),
+///         call_id: call_id.clone(),
+///         actor_id: ActorId::new("human-1")?,
+///     },
+///     HarnessEvent::ToolStarted {
+///         run_id: run_id.clone(),
+///         call_id: call_id.clone(),
+///     },
+///     HarnessEvent::ToolFinished {
+///         run_id: run_id.clone(),
+///         result: ToolResult {
+///             call_id,
+///             summary: "wrote note.txt".into(),
+///             data: json!({}),
+///             artifacts: vec![],
+///             visibility: ResultVisibility::Both,
+///         },
+///     },
+///     HarnessEvent::RunFinished { run_id },
+/// ];
+///
+/// let mut state = RunState::new();
+/// for (seq, event) in events.into_iter().enumerate() {
+///     state.apply(&RecordedEvent {
+///         seq: seq as u64,
+///         occurred_at_ms: 0,
+///         event,
+///     })?;
+///     if seq == 5 {
+///         assert!(matches!(state.pending_command(), Some(RunCommand::AwaitApproval { .. })));
+///     }
+///     if seq == 6 {
+///         assert!(matches!(state.pending_command(), Some(RunCommand::ExecuteTool { .. })));
+///     }
+/// }
+/// assert_eq!(state.phase(), &RunPhase::Finished);
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunState {
     run_id: Option<RunId>,
@@ -79,7 +241,7 @@ impl Default for RunState {
 }
 
 impl RunState {
-    /// Creates an empty run state.
+    /// Creates an unbound state expecting sequence zero and `run_started`.
     pub fn new() -> Self {
         Self {
             run_id: None,
@@ -90,22 +252,22 @@ impl RunState {
         }
     }
 
-    /// Returns the run id after `run_started` has been applied.
+    /// Returns the bound run id, or `None` before `run_started` is applied.
     pub fn run_id(&self) -> Option<&RunId> {
         self.run_id.as_ref()
     }
 
-    /// Returns the next expected event sequence number.
+    /// Returns the next contiguous per-run sequence number.
     pub fn next_seq(&self) -> u64 {
         self.next_seq
     }
 
-    /// Returns the current run phase.
+    /// Returns the phase derived from all successfully applied events.
     pub fn phase(&self) -> &RunPhase {
         &self.phase
     }
 
-    /// Returns the pending host command, if this state needs host IO.
+    /// Derives the pending host IO command without mutating run state.
     pub fn pending_command(&self) -> Option<RunCommand> {
         match &self.phase {
             RunPhase::ReadyToRequestModel {
@@ -128,7 +290,7 @@ impl RunState {
         }
     }
 
-    /// Applies one recorded event.
+    /// Validates and applies one event, advancing the sequence only on success.
     pub fn apply(&mut self, record: &RecordedEvent) -> Result<(), Error> {
         if record.seq != self.next_seq {
             return Err(Error::SequenceMismatch {

@@ -48,7 +48,7 @@ pub struct ContextPack {
 }
 
 impl ContextPack {
-    /// Returns estimated token usage across fragments.
+    /// Sums fragment estimates, saturating at [`u32::MAX`].
     pub fn estimated_tokens(&self) -> u32 {
         self.estimated_tokens_u64().min(u64::from(u32::MAX)) as u32
     }
@@ -60,7 +60,7 @@ impl ContextPack {
             .sum()
     }
 
-    /// Verifies the context pack fits inside its budget.
+    /// Rejects a fragment sum that exceeds the declared token budget.
     pub fn validate_budget(&self) -> Result<(), Error> {
         let used = self.estimated_tokens_u64();
         if used > u64::from(self.token_budget) {

@@ -5,6 +5,7 @@
 //! default stance is: every side effect is typed, policy-gated, and recorded.
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 pub mod context;
 pub mod error;
