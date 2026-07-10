@@ -19,7 +19,7 @@ pub enum EffectClass {
 }
 
 impl EffectClass {
-    /// Returns the default policy posture for this effect class.
+    /// Returns the fail-closed baseline decision for this effect class.
     pub fn default_policy(&self) -> PolicyDecision {
         match self {
             Self::ReadOnly => PolicyDecision::Allow,
@@ -40,9 +40,15 @@ pub enum PolicyDecision {
     /// Action may proceed.
     Allow,
     /// Action may proceed only after approval.
-    RequireApproval { reason: String },
+    RequireApproval {
+        /// Explanation presented to the approver and retained in run state.
+        reason: String,
+    },
     /// Action must not proceed.
-    Deny { reason: String },
+    Deny {
+        /// Durable explanation for rejecting the action.
+        reason: String,
+    },
 }
 
 #[cfg(test)]

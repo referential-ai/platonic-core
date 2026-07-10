@@ -12,7 +12,7 @@ macro_rules! id_type {
         pub struct $name(String);
 
         impl $name {
-            /// Creates a new identifier from a non-empty string.
+            /// Rejects empty or all-whitespace input and otherwise stores it verbatim.
             pub fn new(value: impl Into<String>) -> Result<Self, Error> {
                 let value = value.into();
                 if value.trim().is_empty() {
@@ -21,7 +21,7 @@ macro_rules! id_type {
                 Ok(Self(value))
             }
 
-            /// Returns the identifier as a string slice.
+            /// Borrows the exact stored identifier value.
             pub fn as_str(&self) -> &str {
                 &self.0
             }

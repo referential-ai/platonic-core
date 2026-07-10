@@ -32,73 +32,125 @@ pub struct RecordedEvent {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "event")]
 pub enum HarnessEvent {
-    /// A run began.
-    RunStarted { run_id: RunId, agent_id: AgentId },
-    /// Context was assembled for a model call.
-    ContextBuilt {
+    /// Binds a fresh state machine to one run and agent.
+    RunStarted {
+        /// Durable run identifier shared by every later event.
         run_id: RunId,
+        /// Agent identity selected by the host for this run.
+        agent_id: AgentId,
+    },
+    /// Records the exact bounded context selected for a model turn.
+    ContextBuilt {
+        /// Run receiving the context.
+        run_id: RunId,
+        /// New turn identifier; concluded turn identifiers cannot be reused.
         turn_id: TurnId,
+        /// Lane-labeled context that must pass budget validation.
         context: ContextPack,
     },
-    /// A model request crossed the provider boundary.
+    /// Records that a model request crossed the provider boundary.
     ModelRequested {
+        /// Run making the request.
         run_id: RunId,
+        /// Turn whose context is being submitted.
         turn_id: TurnId,
+        /// Monotonic model step expected by the run state.
         step: u32,
+        /// Host-selected model used for the request.
         model: ModelName,
     },
-    /// A model response crossed the provider boundary.
+    /// Records the normalized result returned by the pending model request.
     ModelResponded {
+        /// Run receiving the response.
         run_id: RunId,
+        /// Turn of the pending model request.
         turn_id: TurnId,
+        /// Model step of the pending request.
         step: u32,
+        /// Normalized model-authored message.
         output: Message,
+        /// Unvalidated model proposals; an empty list concludes the turn.
         proposed_calls: Vec<ToolProposal>,
+        /// Provider-reported token usage for the response.
         usage: ModelUsage,
     },
-    /// A model proposal was accepted as a host-validated tool call.
+    /// Records a model proposal after host validation and effect classification.
     ToolCallProposed {
+        /// Run containing the proposal.
         run_id: RunId,
+        /// Turn that produced the proposal.
         turn_id: TurnId,
+        /// Host-validated call; its tool and input must match a pending proposal.
         call: ToolCall,
     },
-    /// Policy evaluated a proposed tool call.
+    /// Records the policy decision for the pending validated call.
     PolicyEvaluated {
+        /// Run containing the call.
         run_id: RunId,
+        /// Pending call evaluated by policy.
         call_id: ToolCallId,
+        /// Durable allow, approval, or denial decision.
         decision: PolicyDecision,
     },
-    /// A pending approval was granted.
+    /// Records who granted a pending approval.
     ApprovalGranted {
+        /// Run containing the call.
         run_id: RunId,
+        /// Pending call approved for execution.
         call_id: ToolCallId,
+        /// Human or host actor that granted approval.
         actor_id: ActorId,
     },
-    /// A pending approval was denied.
+    /// Records who denied a pending approval and why.
     ApprovalDenied {
+        /// Run containing the call.
         run_id: RunId,
+        /// Pending call denied before execution.
         call_id: ToolCallId,
+        /// Human or host actor that denied approval.
         actor_id: ActorId,
+        /// Durable denial reason for audit and continuation context.
         reason: String,
     },
-    /// Tool execution started.
-    ToolStarted { run_id: RunId, call_id: ToolCallId },
-    /// Tool execution finished.
-    ToolFinished { run_id: RunId, result: ToolResult },
-    /// Tool execution failed.
-    ToolFailed {
+    /// Records that the host began executing the approved call.
+    ToolStarted {
+        /// Run containing the call.
         run_id: RunId,
+        /// Approved call that crossed the execution boundary.
         call_id: ToolCallId,
+    },
+    /// Records the structured result returned by the running call.
+    ToolFinished {
+        /// Run containing the call.
+        run_id: RunId,
+        /// Result whose call id must match the running call.
+        result: ToolResult,
+    },
+    /// Records that the running call failed without a result.
+    ToolFailed {
+        /// Run containing the call.
+        run_id: RunId,
+        /// Running call that failed.
+        call_id: ToolCallId,
+        /// Durable host-reported failure reason.
         reason: String,
     },
-    /// A run completed successfully.
-    RunFinished { run_id: RunId },
-    /// A run failed.
-    RunFailed { run_id: RunId, reason: String },
+    /// Terminates a concluded turn as a successful run.
+    RunFinished {
+        /// Run that completed.
+        run_id: RunId,
+    },
+    /// Terminates any started, nonterminal run as failed.
+    RunFailed {
+        /// Run that failed.
+        run_id: RunId,
+        /// Durable terminal failure reason.
+        reason: String,
+    },
 }
 
 impl HarnessEvent {
-    /// Returns the run id associated with this event.
+    /// Returns the owning run id without validating event order or phase.
     pub fn run_id(&self) -> &RunId {
         match self {
             Self::RunStarted { run_id, .. }
@@ -117,7 +169,7 @@ impl HarnessEvent {
         }
     }
 
-    /// Returns a stable event name for diagnostics.
+    /// Returns the stable snake-case event name used in transition diagnostics.
     pub fn name(&self) -> &'static str {
         match self {
             Self::RunStarted { .. } => "run_started",

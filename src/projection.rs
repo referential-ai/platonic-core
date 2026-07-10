@@ -17,7 +17,7 @@ pub struct RunReadback {
 }
 
 impl RunReadback {
-    /// Builds a readback by replay-validating the recorded events.
+    /// Replays an ordered ledger and rejects the first invalid recorded event.
     pub fn from_events(events: &[RecordedEvent]) -> Result<Self, Error> {
         let mut state = RunState::new();
         let mut entries = Vec::new();
@@ -40,30 +40,60 @@ impl RunReadback {
 pub enum ReadbackEntry {
     /// One host-built context fragment that entered a model turn.
     ContextFragment {
+        /// Turn that received the fragment.
         turn_id: TurnId,
+        /// Exact fragment recorded in the turn context.
         fragment: ContextFragment,
     },
     /// Model response message.
-    ModelMessage { turn_id: TurnId, message: Message },
+    ModelMessage {
+        /// Turn that received the response.
+        turn_id: TurnId,
+        /// Normalized model-authored message.
+        message: Message,
+    },
     /// Host-validated tool call consumed for a turn.
-    ToolCall { turn_id: TurnId, call: ToolCall },
+    ToolCall {
+        /// Turn that proposed the call.
+        turn_id: TurnId,
+        /// Validated and effect-classified call.
+        call: ToolCall,
+    },
     /// Structured tool result.
-    ToolResult { result: ToolResult },
+    ToolResult {
+        /// Exact result recorded after execution.
+        result: ToolResult,
+    },
     /// Policy denied a tool call before execution.
-    PolicyDenied { call_id: ToolCallId, reason: String },
+    PolicyDenied {
+        /// Call rejected by policy.
+        call_id: ToolCallId,
+        /// Recorded policy explanation.
+        reason: String,
+    },
     /// Approval granted a tool call before execution.
     ApprovalGranted {
+        /// Call approved for execution.
         call_id: ToolCallId,
+        /// Human or host actor that granted approval.
         actor_id: ActorId,
     },
     /// Approval denied a tool call before execution.
     ApprovalDenied {
+        /// Call denied before execution.
         call_id: ToolCallId,
+        /// Human or host actor that denied approval.
         actor_id: ActorId,
+        /// Recorded denial explanation.
         reason: String,
     },
     /// Tool execution failed.
-    ToolFailed { call_id: ToolCallId, reason: String },
+    ToolFailed {
+        /// Call whose execution failed.
+        call_id: ToolCallId,
+        /// Recorded host failure explanation.
+        reason: String,
+    },
 }
 
 fn collect_entry(event: &HarnessEvent, entries: &mut Vec<ReadbackEntry>) {
