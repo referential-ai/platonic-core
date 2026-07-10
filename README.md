@@ -38,15 +38,7 @@ projection pure run readback projection
 error      shared error types
 ```
 
-The first contract defines serializable primitives:
-
-- `RunId`, `TurnId`, `AgentId`, `ToolCallId`, `ArtifactId`
-- `Message`, `ContextPack`, `ContextFragment`, `ContextLane`
-- `EffectClass`, `PolicyDecision`
-- `ToolProposal`, `ToolCall`, `ToolResult`, `ResultVisibility`
-- `RecordedEvent`, `HarnessEvent`, `ModelUsage`
-- `RunState`, `RunPhase`, `RunCommand`
-- `RunReadback`, `ReadbackEntry`
+The public contract is documented in the [crate rustdoc](src/lib.rs).
 
 ## Verify
 
