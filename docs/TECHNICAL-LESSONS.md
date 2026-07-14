@@ -147,15 +147,21 @@ Paths under `codex-rs/`.
   writable roots passed as `-D` params not string-interpolated
   (`seatbelt.rs:761-767`). Cheapest OS sandbox to bolt onto an exec wrapper —
   no helper binary.
-- Approval UX: **run sandboxed without prompting; on a sandbox denial, offer an
-  unsandboxed retry** (`core/src/tools/orchestrator.rs:294-297,415-424`) — but
-  only when there are no denied-read paths (else the retry silently grants
-  those reads, `core/src/tools/sandboxing.rs:280-284`), gated by a denial
-  heuristic (keyword + Linux `128+SIGSYS` exit,
-  `sandboxing/src/denial.rs:14-53`). In-session grants are cached by full
-  canonicalized command (`core/src/tools/sandboxing.rs:89-115`); durable
-  command-prefix grants are a separate exec-policy path
-  (`core/src/exec_policy.rs:886-899`).
+- Approval UX (approval → sandbox → attempt → escalate-on-denial,
+  `core/src/tools/orchestrator.rs:4-7`): the first attempt runs unprompted
+  only when tool + approval policy resolve to
+  `ExecApprovalRequirement::Skip`; `NeedsApproval` prompts before the first
+  attempt and `Forbidden` rejects (`orchestrator.rs:152-218`). On a sandbox
+  denial, an unsandboxed retry is offered only if the tool opts into
+  escalation (`orchestrator.rs:318`), only when there are no denied-read
+  paths (else the retry silently grants those reads,
+  `orchestrator.rs:331-361`, `core/src/tools/sandboxing.rs:280-284`), and
+  with re-approval unless policy plus prior approval allow bypass
+  (`orchestrator.rs:386-413`); denial detection is heuristic (keyword +
+  Linux `128+SIGSYS` exit, `sandboxing/src/denial.rs:14-53`). In-session
+  grants are cached by full canonicalized command
+  (`core/src/tools/sandboxing.rs:89-115`); durable command-prefix grants are
+  a separate exec-policy path (`core/src/exec_policy.rs:886-899`).
 - Discovery hardening: accept a `bwrap` only if it resolves outside cwd
   (`sandboxing/src/bwrap.rs:180-190`); probe `--help` for required flags before
   trusting it (`linux-sandbox/src/launcher.rs:108-124`).
@@ -208,9 +214,12 @@ Paths under `crates/`.
   `is_write()`, `ironclaw_host_api/src/capability.rs:21-53`), `Decision =
   Allow(ordered obligations)/Deny/RequireApproval`
   (`ironclaw_host_api/src/decision.rs:22-26,133-191`), event-sourced redacted
-  audit log (`ironclaw_events/src/sink.rs:147-164`), and external-actor
-  pairing anchored to a `trusted_owner_user_id`
-  (`ironclaw_conversations/src/inbound.rs`).
+  audit log (`ironclaw_events/src/sink.rs:147-164`), and two separate
+  host-side channel-identity contracts: first-bound thread ownership via
+  host-supplied trusted scope (`trusted_owner_user_id`,
+  `ironclaw_conversations/src/traits.rs:21-34`) and external-actor pairing
+  that is explicitly not self-service (`traits.rs:54-60`); the inbound path
+  only passes host-configured scope through (`inbound.rs:169-183`).
 
 ### OpenFang — validation-by-counterexample
 
@@ -229,9 +238,10 @@ Paths under `crates/`.
   (`bridge.rs:836-838`); default authorize is fail-open when no users are
   registered (`channel_bridge.rs:840-842`,
   `openfang-kernel/src/auth.rs:176-178`).
-- Patterns to evaluate: dumb-pipe `ChannelAdapter` trait with one
-  `dispatch_message` chokepoint (43 adapters own zero semantics,
-  `openfang-channels/src/types.rs:292-370`, `bridge.rs:754` — validates our
+- Patterns to evaluate: `ChannelAdapter` trait exposing only platform
+  I/O/presentation methods while one centralized `dispatch_message`
+  chokepoint owns policy and routing for all 43 adapters
+  (`openfang-channels/src/types.rs:292-370`, `bridge.rs:754` — validates our
   gateway boundary); `serde(deny_unknown_fields)` on routing/binding config so
   a typo fails closed (`openfang-types/src/config.rs:741,799`); taint guards
   (secret-labeled data blocked from egress, external-tainted data from shell,
@@ -256,11 +266,13 @@ Paths under `crates/goose/src/`.
   auto-approved tool execution; tool requests surface only as typing
   indicators (`gateway/handler.rs:441-467`). Our owner-allowlist + notify-only
   design is categorically safer.
-- Security inspectors mostly off-by-default (`security/mod.rs:54,71,97,101`)
-  and fail-open on inspector error (`tool_inspection.rs:107-115`); the egress
-  inspector extracts exfil destinations but **always returns Allow** (log-only,
-  not enforcement, `security/egress_inspector.rs:356-383`). Do not mistake
-  detection for a control.
+- The inspector chain itself is always registered
+  (`agents/agent.rs:642-669`), but the prompt/command injection classifiers
+  default off (`security/mod.rs:54,71,97,101`), inspector errors fail open
+  (`tool_inspection.rs:107-115`), and the egress inspector extracts exfil
+  destinations but **always returns Allow** (log-only, not enforcement,
+  `security/egress_inspector.rs:356-383`). Do not mistake detection for a
+  control.
 - Patterns to evaluate — the shape, not the defaults: read-only-hint →
   auto-approve with a cached LLM "permission judge" for unannotated tools
   (`permission/permission_inspector.rs:159-176,219-247`); an OSV `MAL-*` gate
@@ -278,9 +290,10 @@ Scoped to the four reviewed repositories.
    demoted it to legacy fallback; bubblewrap+seccomp or a container is what
    ships. Our fast-follow should target bwrap+seccomp first, Landlock only as
    a fallback.
-2. **Default-on, fail-closed** is the dividing line. Goose and OpenFang park
-   most controls behind opt-in flags and fail open; for effect-gated tools the
-   right default is on and closed.
+2. **Default-on, fail-closed** is the dividing line. Goose ships its
+   injection classifiers off, its egress inspector log-only, and fails open
+   on inspector error; OpenFang's authorization is fail-open until users are
+   registered. For effect-gated tools the right default is on and closed.
 3. **Reject instruction-like untrusted ingress; neutralize accepted tool
    output** (IronClaw). Two distinct rules: ingress that looks like
    instructions is rejected outright; output that passed the gate is bounded,
