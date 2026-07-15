@@ -49,3 +49,12 @@ cargo test
 ## Status
 
 Seed kernel. The run contract is implemented as a pure multi-turn state machine with replay-validated readback projections; outer apps still own IO, providers, tools, stores, gateways, renderers, and schedulers.
+
+## License
+
+Licensed under either of
+
+- [Apache License, Version 2.0](LICENSE-APACHE) ([official text](https://www.apache.org/licenses/LICENSE-2.0))
+- [MIT License](LICENSE-MIT) ([official text](https://opensource.org/licenses/MIT))
+
+at your option.
