@@ -38,7 +38,7 @@ projection pure run readback projection
 error      shared error types
 ```
 
-The public contract is documented in the [crate rustdoc](src/lib.rs).
+The public contract is documented in the [crate rustdoc](https://docs.rs/platonic-core).
 
 ## Verify
 
