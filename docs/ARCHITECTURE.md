@@ -194,7 +194,7 @@ platonic-provider   model-provider adapter traits
 platonic-tools      tool registry and schema validation
 platonic-store      event store implementations
 platonic-replay     replay/caching engine
-plato-agent         CLI/product agent built on Platonic
+plato-agent         Plato Agent application/reference runtime
 ```
 
 Do not create these crates until the core contract needs them.
