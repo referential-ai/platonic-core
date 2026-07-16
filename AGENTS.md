@@ -1,6 +1,8 @@
 # Agent Instructions for platonic-core
 
-This repo is the small Rust harness kernel for the planned Platonic / Plato Agent stack under Referential.
+This repo is the small Rust harness kernel for the Platonic framework. The
+workspace [naming authority](https://github.com/referential-ai/platonic-workspace/blob/main/product/branding.md)
+owns the hierarchy and exact forms.
 
 ## Rules
 
