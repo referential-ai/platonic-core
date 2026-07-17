@@ -159,7 +159,6 @@ Future storage backends can persist these events to SQLite, Postgres, files, or 
 Hermes-shaped needs not every embedding wants. None exists until a run forces it; each enters as events/types only — engines stay outside core.
 
 - delegation — parent/child run linkage with budget inheritance (plausible early).
-- compaction — context compression proposed/applied as recorded policy events; never silent (plausible early).
 - memory — retrieval query/hit types entering via the `retrieved_context` lane; never a store (wait).
 - scheduling — job/trigger/triage vocabulary so unattended runs route findings to triage, not user spam (wait).
 
