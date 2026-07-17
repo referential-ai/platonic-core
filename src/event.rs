@@ -48,6 +48,21 @@ pub enum HarnessEvent {
         /// Lane-labeled context that must pass budget validation.
         context: ContextPack,
     },
+    /// Records prior turns omitted from the next model context.
+    ContextCompacted {
+        /// Run receiving the compacted context.
+        run_id: RunId,
+        /// Turn whose context will reflect the compaction.
+        turn_id: TurnId,
+        /// Estimated tokens before prior turns were dropped.
+        estimated_tokens_before: u32,
+        /// Estimated tokens after prior turns were dropped.
+        estimated_tokens_after: u32,
+        /// Zero-based first dropped prior-turn position.
+        dropped_turn_start: u64,
+        /// Exclusive end of the dropped prior-turn range.
+        dropped_turn_end_exclusive: u64,
+    },
     /// Records that a model request crossed the provider boundary.
     ModelRequested {
         /// Run making the request.
@@ -155,6 +170,7 @@ impl HarnessEvent {
         match self {
             Self::RunStarted { run_id, .. }
             | Self::ContextBuilt { run_id, .. }
+            | Self::ContextCompacted { run_id, .. }
             | Self::ModelRequested { run_id, .. }
             | Self::ModelResponded { run_id, .. }
             | Self::ToolCallProposed { run_id, .. }
@@ -174,6 +190,7 @@ impl HarnessEvent {
         match self {
             Self::RunStarted { .. } => "run_started",
             Self::ContextBuilt { .. } => "context_built",
+            Self::ContextCompacted { .. } => "context_compacted",
             Self::ModelRequested { .. } => "model_requested",
             Self::ModelResponded { .. } => "model_responded",
             Self::ToolCallProposed { .. } => "tool_call_proposed",
@@ -231,6 +248,14 @@ mod tests {
                         },
                     ],
                 },
+            },
+            HarnessEvent::ContextCompacted {
+                run_id: run_id.clone(),
+                turn_id: turn_id.clone(),
+                estimated_tokens_before: 4_096,
+                estimated_tokens_after: 2_048,
+                dropped_turn_start: 0,
+                dropped_turn_end_exclusive: 3,
             },
             HarnessEvent::ModelRequested {
                 run_id: run_id.clone(),
@@ -347,6 +372,19 @@ mod tests {
                                 }
                             ]
                         }
+                    }
+                }),
+                HarnessEvent::ContextCompacted { .. } => json!({
+                    "seq": 7,
+                    "occurred_at_ms": 1_700_000_000_000_u64,
+                    "event": {
+                        "event": "context_compacted",
+                        "run_id": "run_1",
+                        "turn_id": "turn_1",
+                        "estimated_tokens_before": 4_096,
+                        "estimated_tokens_after": 2_048,
+                        "dropped_turn_start": 0,
+                        "dropped_turn_end_exclusive": 3
                     }
                 }),
                 HarnessEvent::ModelRequested { .. } => json!({
