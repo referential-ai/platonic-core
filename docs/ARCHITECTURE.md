@@ -134,6 +134,7 @@ Large raw output should be stored as an artifact and summarized for the model.
 The durable ledger. Initial events include:
 
 - `run_started`
+- `context_compacted`
 - `context_built`
 - `model_requested`
 - `model_responded`
@@ -148,6 +149,8 @@ The durable ledger. Initial events include:
 - `run_failed`
 
 Events are recorded wrapped in `RecordedEvent { seq, occurred_at_ms, event }`; hosts supply both fields — core never reads clocks. `seq` is per-run and contiguous from 0; the run machine rejects gaps and regressions. Store append is idempotent on `(run_id, seq)`; ordering across runs is a store concern. Correlation: tool events carry `call_id`; model request/response pairs carry a per-run `step` counter. Ledger variants are never cargo-feature-gated: one schema, always readable.
+
+`context_compacted` records a non-empty prior-turn range and must be followed by `context_built` for the same turn, or by `run_failed`. It emits no command and leaves the public run phase unchanged.
 
 Future storage backends can persist these events to SQLite, Postgres, files, or an append-only log.
 
